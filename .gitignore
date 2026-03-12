@@ -1,0 +1,35 @@
+# C++ build output
+cpp-engine/build/
+cpp-engine/_deps/
+
+# object files and compiled output
+*.o
+*.a
+*.so
+*.out
+
+# CMake files generated during configure
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+install_manifest.txt
+compile_commands.json
+
+# Java build output
+java-simulation/target/
+
+# IDE and agent directories
+.vscode/
+.idea/
+.agents/
+*.iml
+*.iws
+*.ipr
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
