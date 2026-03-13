@@ -64,7 +64,7 @@ add_library(hft_engine STATIC)
 target_sources(hft_engine PRIVATE
     src/engine.cpp          # placeholder — keeps the target valid; templates live in headers
     src/OrderBook.cpp
-    # src/MatchingEngine.cpp
+    src/MatchingEngine.cpp
 )
 
 target_include_directories(hft_engine PUBLIC
