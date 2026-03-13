@@ -9,17 +9,13 @@ namespace hft {
 
 template <typename T, std::size_t Capacity>
 bool LockFreeQueue<T, Capacity>::push(const T &item) noexcept {
-  // We relaxed the load of head_ because the producer is the only thread that
-  // modifies it. It is safe to use relaxed ordering here.
+  // Relaxed: Modified by producer only.
   const std::size_t current_head = head_.load(std::memory_order_relaxed);
 
-  // We must load tail_ with acquire to ensure we see the changes made by the
-  // pop() thread.
+  // Acquire: Synchronize with consumer's pop.
   const std::size_t current_tail = tail_.load(std::memory_order_acquire);
 
-  // If the buffer is full, we can't push.
-  // Since capacity is a power of 2, masking the difference works for tracking
-  // fullness
+  // Cap is pow2, mask handles fullness math
   if ((current_head - current_tail) == Capacity) {
     return false;
   }
@@ -27,21 +23,17 @@ bool LockFreeQueue<T, Capacity>::push(const T &item) noexcept {
   // Write the actual data.
   buffer_[current_head & K_MASK] = item;
 
-  // Publish the new head value to the consumer thread.
-  // Release memory order ensures the data written to buffer_ is visible
-  // before the incremented head becomes visible.
+  // Write data before incrementing head (Release).
   head_.store(current_head + 1, std::memory_order_release);
   return true;
 }
 
 template <typename T, std::size_t Capacity>
 bool LockFreeQueue<T, Capacity>::pop(T &item) noexcept {
-  // We relaxed the load of tail_ because the consumer is the only thread that
-  // modifies it
+  // Relaxed: Modified by consumer only.
   const std::size_t current_tail = tail_.load(std::memory_order_relaxed);
 
-  // We must load head_ with acquire to ensure we see the push() thread's writes
-  // to buffer_
+  // Acquire: Synchronize with producer's push.
   const std::size_t current_head = head_.load(std::memory_order_acquire);
 
   // If the buffer is empty, we can't
@@ -52,15 +44,14 @@ bool LockFreeQueue<T, Capacity>::pop(T &item) noexcept {
   // Read the actual data.
   item = buffer_[current_tail & K_MASK];
 
-  // Publish the new tail value to the producer thread
+  // Publish tail update (Release).
   tail_.store(current_tail + 1, std::memory_order_release);
   return true;
 }
 
 template <typename T, std::size_t Capacity>
 std::size_t LockFreeQueue<T, Capacity>::size() const noexcept {
-  // Note: this is approximate in a multi-threaded context.
-  // Head and tail can change while this is calculating
+  // Approximate size
   const std::size_t current_head = head_.load(std::memory_order_relaxed);
   const std::size_t current_tail = tail_.load(std::memory_order_relaxed);
   return current_head - current_tail;

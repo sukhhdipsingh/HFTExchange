@@ -9,16 +9,9 @@
 
 namespace hft {
 
-// Fixed-size slab allocator. Allocates a single contiguous block at
-// construction time and hands out slots from it. No malloc/new/free on the
-// critical path.
-//
-// Template params:
-//   T        — the type being pooled (must be trivially destructible for now)
-//   Capacity — max number of objects the pool can hold at once
-//
-// Thread safety: not thread-safe by itself. The caller is responsible for
-// synchronization, or you wrap it behind a lock-free queue.
+// Fixed-size slab allocator. Zero-allocation on critical path.
+// Not thread-safe. Caller must synchronize.
+// T must be trivially destructible for now.
 template <typename T, std::size_t Capacity> class MemoryPool {
 public:
   static_assert(Capacity > 0, "pool capacity must be > 0");
@@ -34,31 +27,21 @@ public:
   MemoryPool(MemoryPool &&) = delete;
   MemoryPool &operator=(MemoryPool &&) = delete;
 
-  // grab a slot from the pool. returns a pointer into the pre-allocated
-  // storage. returns nullptr if the pool is exhausted.
-  // this should never return nullptr on the hot path — if it does,
-  // your Capacity is too small.
+  // Returns nullptr if exhausted (Capacity violation).
   [[nodiscard]] T *acquire() noexcept;
 
-  // return a slot to the pool. the pointer must have come from acquire().
-  // calling this with any other pointer is undefined behavior.
+  // Return slot to pool. Pointer must be from acquire().
   void release(T *ptr) noexcept;
 
-  // acquire a slot and construct a T in-place with the given args.
-  // this is the right way to use the pool with non-trivial types.
-  // returns nullptr if the pool is exhausted.
+  // Acquire slot and construct T in-place. Returns nullptr if exhausted.
   template <typename... Args>
   [[nodiscard]] T *construct(Args &&...args) noexcept(
       std::is_nothrow_constructible_v<T, Args...>);
 
-  // call T's destructor and return the slot to the pool.
-  // use this instead of release() when T has a non-trivial destructor.
+  // Call T's destructor and return slot to pool.
   void destroy(T *ptr) noexcept;
 
-  // reset the pool back to fully empty — all slots available.
-  // does NOT call destructors. only safe if all outstanding pointers
-  // have already been released or you know they won't be used again.
-  // mainly useful between test cases.
+  // Reset pool back to empty. Does NOT call destructors. Safe only if all ptrs released.
   void reset() noexcept;
 
   // returns true if the pointer came from this pool's storage block.
@@ -80,9 +63,7 @@ public:
   [[nodiscard]] std::size_t free_list_length() const noexcept;
 
 private:
-  // each Slot holds either an object or a pointer to the next free slot.
-  // the union means we're not wasting memory on the free list — we reuse
-  // the object storage itself to store the free list pointer.
+  // Union overlays free list pointer on unallocated storage.
   union Slot {
     alignas(T) std::byte storage[sizeof(T)];
     Slot *next_free;
