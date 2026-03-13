@@ -7,65 +7,57 @@ OrderBook::OrderBook(MemoryPool<Order, 1048576>& order_pool)
     : order_pool_(order_pool) {}
 
 void OrderBook::add_order(uint64_t order_id, Side side, uint64_t price, uint32_t quantity) {
-  // Temporary incoming order to hold state during matching.
-  // Not allocated from pool yet.
+  // Hold incoming state; no allocation yet.
   Order incoming{order_id, price, quantity, ++sequence_id_, side, nullptr, nullptr};
   
   match(&incoming);
 
-  // If quantity still remains, the order must rest in the book.
+    // Rest quantity if remaining.
   if (incoming.quantity > 0) {
     Order* resting = order_pool_.acquire();
     if (!resting) {
-      // In a real system, we'd log a critical error or send a reject.
-      // Pool capacity must exceed max open orders.
+      // TODO: Critical error/reject on pool exhaustion.
       return; 
     }
     
-    // Copy the remaining state into the pooled order slot.
+    // Copy state into pool slot.
     *resting = incoming;
     resting->next = nullptr;
     resting->prev = nullptr;
     
     insert_resting(resting);
-    order_map_[resting->order_id] = resting;
+    if (resting->order_id < MAX_ORDERS) {
+      order_map_[resting->order_id] = resting;
+    }
   }
 }
 
 void OrderBook::cancel_order(uint64_t order_id) {
-  auto it = order_map_.find(order_id);
-  if (it == order_map_.end()) {
-    return; // Order not found, ignore
-  }
+  if (order_id >= MAX_ORDERS) return;
+  Order* order = order_map_[order_id];
+  if (!order) return;
   
-  Order* order = it->second;
-  order_map_.erase(it);
+  order_map_[order_id] = nullptr;
 
-  // Find the exact price level and remove it from the intrusive list
+  // Remove from intrusive list.
   if (order->side == Side::Buy) {
-    auto level_it = bids_.find(order->price);
-    if (level_it != bids_.end()) {
-      remove_from_level(level_it->second, order);
-      if (level_it->second.empty()) bids_.erase(level_it);
-    }
+    remove_from_level(bids_[order->price], order);
+    // Note: We could update best_bid_ here if the level became empty,
+    // but lazy evaluation during match() is usually faster in HFT.
   } else {
-    auto level_it = asks_.find(order->price);
-    if (level_it != asks_.end()) {
-      remove_from_level(level_it->second, order);
-      if (level_it->second.empty()) asks_.erase(level_it);
-    }
+    remove_from_level(asks_[order->price], order);
+    // Note: Lazy evaluation for best_ask_ as well.
   }
 
-  // Free memory slot back to the static pool
+  // Free back to static pool.
   order_pool_.release(order);
 }
 
 void OrderBook::match(Order* incoming) {
   if (incoming->side == Side::Buy) {
-    // Buy incoming matches against lowest Asks
-    auto it = asks_.begin();
-    while (it != asks_.end() && incoming->quantity > 0 && incoming->price >= it->first) {
-      PriceLevel& level = it->second;
+    // Match against Asks.
+    while (incoming->quantity > 0 && best_ask_ <= incoming->price && best_ask_ < MAX_PRICE_TICKS) {
+      PriceLevel& level = asks_[best_ask_];
       Order* resting = level.head;
       
       while (resting && incoming->quantity > 0) {
@@ -77,23 +69,24 @@ void OrderBook::match(Order* incoming) {
         Order* next = resting->next;
         if (resting->quantity == 0) {
           remove_from_level(level, resting);
-          order_map_.erase(resting->order_id);
+          if (resting->order_id < MAX_ORDERS) order_map_[resting->order_id] = nullptr;
           order_pool_.release(resting);
         }
         resting = next;
       }
 
+      // Advance best_ask_ if current level is depleted.
       if (level.empty()) {
-        it = asks_.erase(it);
-      } else {
-        ++it;
+        best_ask_++;
+        while (best_ask_ < MAX_PRICE_TICKS && asks_[best_ask_].empty()) {
+          best_ask_++;
+        }
       }
     }
   } else {
-    // Sell incoming matches against highest Bids
-    auto it = bids_.begin();
-    while (it != bids_.end() && incoming->quantity > 0 && incoming->price <= it->first) {
-      PriceLevel& level = it->second;
+    // Match against Bids.
+    while (incoming->quantity > 0 && best_bid_ >= incoming->price && best_bid_ > 0) {
+      PriceLevel& level = bids_[best_bid_];
       Order* resting = level.head;
       
       while (resting && incoming->quantity > 0) {
@@ -105,30 +98,37 @@ void OrderBook::match(Order* incoming) {
         Order* next = resting->next;
         if (resting->quantity == 0) {
           remove_from_level(level, resting);
-          order_map_.erase(resting->order_id);
+          if (resting->order_id < MAX_ORDERS) order_map_[resting->order_id] = nullptr;
           order_pool_.release(resting);
         }
         resting = next;
       }
 
+      // Advance best_bid_ if current level is depleted.
       if (level.empty()) {
-        it = bids_.erase(it);
-      } else {
-        ++it;
+        if (best_bid_ == 0) break;
+        best_bid_--;
+        while (best_bid_ > 0 && bids_[best_bid_].empty()) {
+          best_bid_--;
+        }
       }
     }
   }
 }
 
 void OrderBook::insert_resting(Order* order) {
+  if (order->price >= MAX_PRICE_TICKS) return;
+
   PriceLevel* level;
   if (order->side == Side::Buy) {
     level = &bids_[order->price];
+    if (order->price > best_bid_) best_bid_ = order->price;
   } else {
     level = &asks_[order->price];
+    if (order->price < best_ask_) best_ask_ = order->price;
   }
 
-  // Intrusive linked list insertion at the back (FIFO guarantees time priority)
+  // Insert at back (FIFO).
   if (level->empty()) {
     level->head = order;
     level->tail = order;

@@ -2,15 +2,12 @@
 
 #include "Order.h"
 #include "MemoryPool.h"
-#include <map>
-#include <unordered_map>
+#include <array>
 #include <cstdint>
 
 namespace hft {
 
-// Represents a single price level in the OrderBook.
-// It acts as a doubly-linked list head/tail for the incoming Orders.
-// Time priority is maintained implicitly: new orders append to tail.
+// Intrusive doubly-linked list for order time priority.
 struct PriceLevel {
   Order* head{nullptr};
   Order* tail{nullptr};
@@ -20,11 +17,6 @@ struct PriceLevel {
   bool empty() const { return head == nullptr; }
 };
 
-// The core matching structure.
-// For now, Bids are ordered highest-to-lowest, Asks lowest-to-highest.
-// This skeleton uses std::map for price levels. In a strict zero-allocation
-// system, we would replace std::map with a fixed-depth array or flat_map
-// using a secondary MemoryPool, but let's establish the matching logic first.
 class OrderBook {
 public:
   // We share a MemoryPool injected from the MatchingEngine
@@ -47,17 +39,23 @@ public:
   // We'll hook this up to the queue later.
 
 private:
-  MemoryPool<Order, 1048576>& order_pool_;
+  // Flat structure, zero allocations. Max bounds for the simulator.
+  static constexpr size_t MAX_PRICE_TICKS = 100000; // e.g., prices 0 to 999.99
+  static constexpr size_t MAX_ORDERS = 1048576;
+
+  MemoryPool<Order, MAX_ORDERS>& order_pool_;
   uint64_t sequence_id_{0};
 
-  // std::greater sorts Bids descending (buy high)
-  std::map<uint64_t, PriceLevel, std::greater<uint64_t>> bids_;
-  
-  // std::less sorts Asks ascending (sell low)
-  std::map<uint64_t, PriceLevel, std::less<uint64_t>> asks_;
+  // Direct indexing by price tick. O(1) lookup.
+  std::array<PriceLevel, MAX_PRICE_TICKS> bids_{};
+  std::array<PriceLevel, MAX_PRICE_TICKS> asks_{};
 
-  // O(1) lookup to find resting orders for fast cancellation
-  std::unordered_map<uint64_t, Order*> order_map_;
+  // Track the highest bid and lowest ask to avoid scanning.
+  uint64_t best_bid_{0};
+  uint64_t best_ask_{MAX_PRICE_TICKS};
+
+  // Flat lookup array. Dense order IDs map directly to indices.
+  std::array<Order*, MAX_ORDERS> order_map_{nullptr};
 
   // Internal helpers
   void match(Order* incoming);
