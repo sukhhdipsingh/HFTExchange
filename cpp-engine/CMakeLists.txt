@@ -99,6 +99,27 @@ include(GoogleTest)
 gtest_discover_tests(hft_tests)
 
 # ----------------------------------------------------------------------------
+# ffm-bridge shared library (Project Panama boundary)
+# ----------------------------------------------------------------------------
+add_library(hft_bridge SHARED)
+
+target_sources(hft_bridge PRIVATE
+    ../ffm-bridge/src/HFTBridge.cpp
+)
+
+target_include_directories(hft_bridge PUBLIC
+    ../ffm-bridge/include
+)
+
+target_link_libraries(hft_bridge PRIVATE
+    hft_engine
+)
+
+target_compile_options(hft_bridge PRIVATE
+    $<$<CONFIG:Release>:-O3 -march=native -fno-omit-frame-pointer>
+)
+
+# ----------------------------------------------------------------------------
 # benchmark binary
 # ----------------------------------------------------------------------------
 add_executable(hft_benchmarks)

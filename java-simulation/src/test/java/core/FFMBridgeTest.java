@@ -7,12 +7,20 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 // integration test for the full Java -> C++ message path.
-// requires hft_bridge.so to be built and on the path.
+// requires hft_bridge to be built and on the path.
 // TODO: make LIB_PATH configurable via -Dhft.bridge.path system property
 @TestMethodOrder(OrderAnnotation.class)
 class FFMBridgeTest {
 
-    private static final String LIB_PATH = "../cpp-engine/build/libhft_bridge.so";
+    private static final String LIB_PATH = resolveBridgePath();
+
+    private static String resolveBridgePath() {
+        String ext = System.getProperty("os.name", "").toLowerCase().contains("win") ? ".dll" : ".so";
+        String lib = "libhft_bridge" + ext;
+        // assumes mvn test is run from the java-simulation/ directory
+        java.nio.file.Path p = java.nio.file.Path.of("../cpp-engine/build", lib).toAbsolutePath();
+        return p.toString();
+    }
 
     private static FFMBridgeImpl bridge;
     private static MemorySegment engine;
