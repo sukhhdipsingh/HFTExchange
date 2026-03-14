@@ -6,7 +6,7 @@ import java.nio.file.Path;
 
 // loads hft_bridge shared lib and resolves extern "C" functions via Project Panama Linker.
 // no JNI at all — all calls go through MethodHandle downcall descriptors.
-public class FFMBridgeImpl implements HFTBridge {
+public class FFMBridgeImpl implements HFTBridge, AutoCloseable {
 
     private final MethodHandle engineCreateHandle;
     private final MethodHandle engineDestroyHandle;
