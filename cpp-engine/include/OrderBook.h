@@ -1,11 +1,23 @@
 #pragma once
 
-#include "Order.h"
+#include "LockFreeQueue.h"
 #include "MemoryPool.h"
+#include "Order.h"
 #include <array>
 #include <cstdint>
 
 namespace hft {
+
+// Emitted on every fill. Consumed by the Java risk layer via the outbound queue.
+struct TradeMsg {
+  uint64_t maker_order_id;
+  uint64_t taker_order_id;
+  uint64_t price;
+  uint32_t quantity;
+  uint32_t pad; // keeps struct at 32 bytes, matching TradeMsgLayout.java
+};
+static_assert(sizeof(TradeMsg) == 32,
+    "TradeMsg layout changed — update TradeMsgLayout.java offsets to match");
 
 // Intrusive doubly-linked list for order time priority.
 struct PriceLevel {
@@ -20,7 +32,8 @@ struct PriceLevel {
 class OrderBook {
 public:
   // We share a MemoryPool injected from the MatchingEngine
-  explicit OrderBook(MemoryPool<Order, 1048576>& order_pool);
+  explicit OrderBook(MemoryPool<Order, 1048576>& order_pool,
+                     LockFreeQueue<TradeMsg, 1024>& outbound_queue);
   ~OrderBook() = default;
 
   // No copying
@@ -39,6 +52,7 @@ public:
   // We'll hook this up to the queue later.
 
 private:
+  LockFreeQueue<TradeMsg, 1024>& outbound_queue_;
   // Flat structure, zero allocations. Max bounds for the simulator.
   static constexpr size_t MAX_PRICE_TICKS = 100000; // e.g., prices 0 to 999.99
   static constexpr size_t MAX_ORDERS = 1048576;

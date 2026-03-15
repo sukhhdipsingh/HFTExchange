@@ -3,8 +3,9 @@
 
 namespace hft {
 
-OrderBook::OrderBook(MemoryPool<Order, 1048576>& order_pool)
-    : order_pool_(order_pool) {}
+OrderBook::OrderBook(MemoryPool<Order, 1048576>& order_pool,
+                     LockFreeQueue<TradeMsg, 1024>& outbound_queue)
+    : outbound_queue_(outbound_queue), order_pool_(order_pool) {}
 
 void OrderBook::add_order(uint64_t order_id, Side side, uint64_t price, uint32_t quantity) {
   // Validate strict bounds
@@ -16,7 +17,7 @@ void OrderBook::add_order(uint64_t order_id, Side side, uint64_t price, uint32_t
   if (order_map_[order_id] != nullptr) return;
 
   // Hold incoming state; no allocation yet.
-  Order incoming{order_id, price, quantity, ++sequence_id_, side, nullptr, nullptr};
+  Order incoming{order_id, price, ++sequence_id_, nullptr, nullptr, quantity, side};
   
   match(&incoming);
 
@@ -68,10 +69,21 @@ void OrderBook::match(Order* incoming) {
       PriceLevel& level = asks_[best_ask_];
       Order* resting = level.head;
       
-      while (resting && incoming->quantity > 0) {
+        while (resting && incoming->quantity > 0) {
         uint32_t trade_qty = std::min(incoming->quantity, resting->quantity);
+
+        // build and emit TradeMsg before mutating state
+        TradeMsg trade{
+          resting->order_id,    // maker
+          incoming->order_id,   // taker
+          resting->price,       // trade at resting price (price-time priority)
+          trade_qty,
+          0                     // pad
+        };
+        outbound_queue_.push(trade); // fire-and-forget; ignore if queue is full
+
         incoming->quantity -= trade_qty;
-        resting->quantity -= trade_qty;
+        resting->quantity  -= trade_qty;
         level.total_volume -= trade_qty;
 
         Order* next = resting->next;
@@ -97,10 +109,20 @@ void OrderBook::match(Order* incoming) {
       PriceLevel& level = bids_[best_bid_];
       Order* resting = level.head;
       
-      while (resting && incoming->quantity > 0) {
+        while (resting && incoming->quantity > 0) {
         uint32_t trade_qty = std::min(incoming->quantity, resting->quantity);
+
+        TradeMsg trade{
+          resting->order_id,
+          incoming->order_id,
+          resting->price,
+          trade_qty,
+          0
+        };
+        outbound_queue_.push(trade);
+
         incoming->quantity -= trade_qty;
-        resting->quantity -= trade_qty;
+        resting->quantity  -= trade_qty;
         level.total_volume -= trade_qty;
 
         Order* next = resting->next;

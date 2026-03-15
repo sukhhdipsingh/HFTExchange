@@ -6,23 +6,19 @@
 
 namespace hft {
 
-// Outbound message (Trade matched) sent back via the LockFreeQueue
-struct TradeMsg {
-  uint64_t maker_order_id;
-  uint64_t taker_order_id;
-  uint64_t price;
-  uint32_t quantity;
-};
+// TradeMsg is defined in OrderBook.h (emitted at fill-time).
 
 // Incoming message from the Java layer (FFM bridge) or network
 struct IncomingMsg {
-  uint64_t order_id; // 8 bytes
-  uint64_t price;    // 8 bytes
-  uint32_t quantity; // 4 bytes
-  uint8_t type;      // 1 byte (0 = New Order, 1 = Cancel)
-  Side side;         // 1 byte
-  uint8_t pad[2];    // 2 bytes padding to align struct exactly to 24 bytes
+  uint64_t order_id;
+  uint64_t price;
+  uint32_t quantity;
+  uint8_t type;
+  Side side;
+  uint8_t pad[2];
 };
+static_assert(sizeof(IncomingMsg) == 24,
+    "IncomingMsg layout changed — update IncomingMsgLayout.java offsets to match");
 
 class MatchingEngine {
 public:
