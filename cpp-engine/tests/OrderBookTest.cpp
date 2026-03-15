@@ -70,3 +70,38 @@ TEST(OrderBookTest, WalkTheBook) {
   // Level 3: 5 units matched, 5 resting.
   EXPECT_EQ(pool->in_use(), 1); 
 }
+
+TEST(OrderBookTest, RejectsOutOfBoundsPrice) {
+  auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
+  auto book = std::make_unique<OrderBook>(*pool);
+
+  // Price >= MAX_PRICE_TICKS
+  book->add_order(1, Side::Buy, 100000, 10);
+  EXPECT_EQ(pool->in_use(), 0);
+
+  // Cancelling it shouldn't crash
+  book->cancel_order(1);
+  EXPECT_EQ(pool->in_use(), 0);
+
+  // Price == 0
+  book->add_order(2, Side::Buy, 0, 10);
+  EXPECT_EQ(pool->in_use(), 0);
+}
+
+TEST(OrderBookTest, RejectsDuplicateOrderId) {
+  auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
+  auto book = std::make_unique<OrderBook>(*pool);
+
+  book->add_order(1, Side::Buy, 10050, 10);
+  EXPECT_EQ(pool->in_use(), 1);
+
+  // Duplicate ID, completely different order parameters
+  book->add_order(1, Side::Sell, 10000, 50);
+  
+  // Should have been rejected, still only 1 order in the pool.
+  EXPECT_EQ(pool->in_use(), 1);
+
+  // We should still be able to cancel the original order
+  book->cancel_order(1);
+  EXPECT_EQ(pool->in_use(), 0);
+}

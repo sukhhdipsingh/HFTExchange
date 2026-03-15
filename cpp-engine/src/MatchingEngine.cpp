@@ -23,7 +23,9 @@ void MatchingEngine::process_message(const IncomingMsg& msg) {
   // fast switch over msg type. no virtual dispatch.
   switch (msg.type) {
     case 0: // New Order
-      // TODO: price/qty bounds validation before passing to book
+      // price/qty/side bounds validation before passing to book
+      if (msg.price <= 0 || msg.price >= 100000 || msg.quantity == 0) break;
+      if (msg.side != Side::Buy && msg.side != Side::Sell) break;
       book_.add_order(msg.order_id, msg.side, msg.price, msg.quantity);
       break;
       

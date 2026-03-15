@@ -7,6 +7,14 @@ OrderBook::OrderBook(MemoryPool<Order, 1048576>& order_pool)
     : order_pool_(order_pool) {}
 
 void OrderBook::add_order(uint64_t order_id, Side side, uint64_t price, uint32_t quantity) {
+  // Validate strict bounds
+  if (price <= 0 || price >= MAX_PRICE_TICKS) return;
+  if (quantity == 0) return;
+  if (order_id >= MAX_ORDERS) return;
+  
+  // Prevent duplicate ID leaks
+  if (order_map_[order_id] != nullptr) return;
+
   // Hold incoming state; no allocation yet.
   Order incoming{order_id, price, quantity, ++sequence_id_, side, nullptr, nullptr};
   
