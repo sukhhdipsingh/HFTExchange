@@ -1,13 +1,12 @@
 package core;
 
-import agents.MarketMakerAgent;
-import agents.MomentumAgent;
 import agents.TradingAgent;
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
 import com.lmax.disruptor.util.DaemonThreadFactory;
+import risk.RiskGate;
 
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
@@ -20,8 +19,12 @@ public class SimulationEngine {
 
     private final FFMBridgeImpl bridge;
     private final MemorySegment enginePtr;
-    private final NativeSPSCQueue inboundQueue;
-    private final SynchronizedQueue underlyingWrappedQueue;
+
+    // Raw SPSC queue (C++ memory) wrapped for multi-producer access
+    private final SynchronizedQueue rawSyncQueue;
+
+    // Risk gate sits in front of the raw queue; all agent orders flow through it.
+    private final RiskGate riskGate;
 
     private final List<TradingAgent> agents = new ArrayList<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -40,10 +43,13 @@ public class SimulationEngine {
         NativeSPSCQueueImpl rawQueue = new NativeSPSCQueueImpl();
         rawQueue.bind(bridge.getInboundQueue(enginePtr));
 
-        // wrap the SPSC queue to support multiple agents pushing concurrently via Java monitor lock
-        this.underlyingWrappedQueue = new SynchronizedQueue(rawQueue);
-        this.inboundQueue = underlyingWrappedQueue;
-        
+        // wrap the SPSC queue to support multiple agents pushing concurrently
+        this.rawSyncQueue = new SynchronizedQueue(rawQueue);
+
+        // pre-trade risk gate — conservative defaults for simulation
+        // notional cap: 10M ticks, 500 orders/sec, 100k gross position
+        this.riskGate = new RiskGate(rawSyncQueue, 10_000_000L, 500, 100_000);
+
         setupDisruptor();
     }
 
@@ -73,8 +79,13 @@ public class SimulationEngine {
     }
 
     public void addAgent(TradingAgent agent) {
-        agent.bindQueue(inboundQueue);
+        // agents write through the risk gate, not directly to the raw queue
+        agent.bindQueue(riskGate);
         agents.add(agent);
+    }
+
+    public RiskGate riskGate() {
+        return riskGate;
     }
 
     public void start() {
