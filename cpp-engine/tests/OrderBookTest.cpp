@@ -8,7 +8,8 @@ using namespace hft;
 
 TEST(OrderBookTest, AddBuyOrderRestsInBook) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   book->add_order(1, Side::Buy, 10050, 10);
   
@@ -18,7 +19,8 @@ TEST(OrderBookTest, AddBuyOrderRestsInBook) {
 
 TEST(OrderBookTest, MatchExactPriceAndQty) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   book->add_order(1, Side::Buy, 10050, 10);
   EXPECT_EQ(pool->in_use(), 1); // Buy resting
@@ -30,7 +32,8 @@ TEST(OrderBookTest, MatchExactPriceAndQty) {
 
 TEST(OrderBookTest, CancelRemovesOrder) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   book->add_order(1, Side::Sell, 10050, 10);
   EXPECT_EQ(pool->in_use(), 1);
@@ -41,7 +44,8 @@ TEST(OrderBookTest, CancelRemovesOrder) {
 
 TEST(OrderBookTest, PartialMatch) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   book->add_order(1, Side::Buy, 10050, 10);
   
@@ -54,7 +58,8 @@ TEST(OrderBookTest, PartialMatch) {
 
 TEST(OrderBookTest, WalkTheBook) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   // Populate multiple levels
   book->add_order(1, Side::Buy, 10030, 10);
@@ -73,7 +78,8 @@ TEST(OrderBookTest, WalkTheBook) {
 
 TEST(OrderBookTest, RejectsOutOfBoundsPrice) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   // Price >= MAX_PRICE_TICKS
   book->add_order(1, Side::Buy, 100000, 10);
@@ -90,7 +96,8 @@ TEST(OrderBookTest, RejectsOutOfBoundsPrice) {
 
 TEST(OrderBookTest, RejectsDuplicateOrderId) {
   auto pool = std::make_unique<MemoryPool<Order, 1048576>>();
-  auto book = std::make_unique<OrderBook>(*pool);
+  LockFreeQueue<TradeMsg, 1024> null_queue;
+  auto book = std::make_unique<OrderBook>(*pool, null_queue);
 
   book->add_order(1, Side::Buy, 10050, 10);
   EXPECT_EQ(pool->in_use(), 1);

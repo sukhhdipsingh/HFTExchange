@@ -3,10 +3,9 @@
 namespace hft {
 
 MatchingEngine::MatchingEngine()
-    : memory_pool_(), 
-      book_(memory_pool_) {
-  // TODO: bind outbound_queue_ to OrderBook so match() can emit TradeMsg directly.
-  // currently we just decrease resting quantities and drop trades on the floor.
+    : memory_pool_(),
+      book_(memory_pool_, outbound_queue_) {
+  // outbound_queue_ is now passed to OrderBook; TradeMsg is emitted on every fill.
 }
 
 void MatchingEngine::poll() {
